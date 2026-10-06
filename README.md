@@ -1,0 +1,43 @@
+# kraftdata
+
+An end-to-end data platform for Norwegian electricity prices, built as a portfolio project.
+
+Day-ahead spot prices for the five Norwegian bidding zones (NO1–NO5) and temperatures for
+five cities are ingested into Azure Data Lake Storage Gen2, loaded into Databricks as Delta
+tables, modelled with dbt, and used for a next-day price forecast and a natural-language
+SQL assistant.
+
+> Work in progress. The README is completed in the final phase.
+
+## Planned architecture
+
+```mermaid
+flowchart LR
+    A[ENTSO-E / Frost API] --> B[ADLS Gen2 raw/]
+    B --> C[Databricks bronze Delta]
+    C --> D[dbt staging / marts]
+    D --> E[Power BI]
+    D --> F[LightGBM forecast]
+    D --> G[Claude SQL assistant]
+```
+
+## Repository layout
+
+| Folder    | Contents                                         |
+|-----------|--------------------------------------------------|
+| `ingest/` | Python ingestion from ENTSO-E and Frost to ADLS  |
+| `dbt/`    | dbt project (staging, intermediate, marts)       |
+| `ml/`     | Forecasting model and MLflow tracking            |
+| `agent/`  | Natural-language to SQL assistant using Claude   |
+| `infra/`  | Azure CLI scripts for the cloud resources        |
+| `docs/`   | Diagrams and documentation                       |
+| `tests/`  | pytest unit tests                                |
+
+## Getting started
+
+```bash
+uv sync                 # create .venv and install dependencies
+cp .env.example .env    # then fill in your own keys; .env is git-ignored
+```
+
+Azure resources are created with [`infra/setup.sh`](infra/setup.sh).
