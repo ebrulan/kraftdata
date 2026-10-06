@@ -40,4 +40,18 @@ uv sync                 # create .venv and install dependencies
 cp .env.example .env    # then fill in your own keys; .env is git-ignored
 ```
 
-Azure resources are created with [`infra/setup.sh`](infra/setup.sh).
+Azure resources are created with two Azure CLI scripts (run `az login` first):
+
+```bash
+STORAGE_ACCOUNT=<name> ./infra/setup.sh             # ADLS Gen2 account + raw container
+STORAGE_ACCOUNT=<name> ./infra/setup_databricks.sh  # Databricks workspace + Unity Catalog access
+```
+
+The Databricks CLI uses the profile `kraftdata` with `auth_type = azure-cli`, so it reuses
+the Azure login and no personal access token is stored locally. Test the connection with:
+
+```bash
+databricks current-user me --profile kraftdata
+```
+
+To delete everything: `az group delete --name rg-kraftdata --yes`.
