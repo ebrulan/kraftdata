@@ -10,12 +10,12 @@ import time
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 import requests
 
+from ingest.timeutils import oslo_date, oslo_day_bounds_utc
+
 API_URL = "https://web-api.tp.entsoe.eu/api"
-OSLO = ZoneInfo("Europe/Oslo")
 
 # EIC area codes for the Norwegian bidding zones.
 ZONES = {
@@ -39,13 +39,6 @@ class PricePoint:
 
     def to_dict(self) -> dict:
         return asdict(self)
-
-
-def oslo_day_bounds_utc(day: date) -> tuple[datetime, datetime]:
-    """Start and end of a Norwegian calendar day in UTC (23, 24 or 25 hours long)."""
-    start = datetime.combine(day, datetime.min.time(), tzinfo=OSLO)
-    end = datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=OSLO)
-    return start.astimezone(UTC), end.astimezone(UTC)
 
 
 def fetch_day_ahead_xml(api_key: str, zone: str, start: date, end: date) -> str:
@@ -118,7 +111,7 @@ def parse_day_ahead_xml(xml_text: str, zone: str) -> list[PricePoint]:
             key = interval_start.isoformat()
             points[key] = PricePoint(
                 zone=zone,
-                delivery_date=interval_start.astimezone(OSLO).date().isoformat(),
+                delivery_date=oslo_date(interval_start),
                 interval_start_utc=key,
                 resolution_minutes=resolution,
                 price_eur_mwh=price,

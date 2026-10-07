@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from ingest.entsoe import oslo_day_bounds_utc, parse_day_ahead_xml
-from ingest.prices import date_chunks
+from ingest.entsoe import parse_day_ahead_xml
+from ingest.timeutils import date_chunks, oslo_day_bounds_utc
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

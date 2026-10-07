@@ -1,8 +1,8 @@
-"""Daily Databricks job: fetch recent prices into the raw volume, then load them into bronze.
+"""Daily Databricks job task: fetch recent data into the raw volume, then load it into bronze.
 
-Runs on serverless compute. The ENTSO-E key comes from the Databricks secret scope
-`kraftdata`, and raw files are written through the Unity Catalog volume that points
-at the ADLS raw container.
+Runs on serverless compute, once per source (`--source prices` or `--source temperatures`).
+API keys come from the Databricks secret scope `kraftdata`, and raw files are written
+through the Unity Catalog volume that points at the ADLS raw container.
 """
 
 import argparse
@@ -27,6 +27,7 @@ def main() -> None:
     logging.getLogger("py4j").setLevel(logging.WARNING)
     today = date.today()
     parser = argparse.ArgumentParser()
+    parser.add_argument("--source", choices=["prices", "temperatures"], required=True)
     # Serverless runs the script without __file__, so the bundle passes its file path.
     parser.add_argument("--repo-root", required=True)
     parser.add_argument("--start", default="")
@@ -34,16 +35,28 @@ def main() -> None:
     args = parser.parse_args()
     repo_root = Path(args.repo_root)
     sys.path.insert(0, str(repo_root))
-    from ingest.prices import ingest
+    from ingest import prices, temperatures
     from ingest.storage import RawStore
 
     start = date.fromisoformat(args.start) if args.start else today - timedelta(days=2)
-    end = date.fromisoformat(args.end) if args.end else today + timedelta(days=1)
+    store = RawStore(local_root=RAW_VOLUME)
 
-    api_key = dbutils.secrets.get(scope="kraftdata", key="entsoe_api_key")
-    ingest(api_key, RawStore(local_root=RAW_VOLUME), start, end)
-    bronze_sql = repo_root / "ingest" / "sql" / "bronze_entsoe_prices.sql"
-    run_sql_file(bronze_sql, {"start_date": start.isoformat(), "end_date": end.isoformat()})
+    if args.source == "prices":
+        # Next-day prices are published around 13:00 CET, so include tomorrow.
+        end = date.fromisoformat(args.end) if args.end else today + timedelta(days=1)
+        api_key = dbutils.secrets.get(scope="kraftdata", key="entsoe_api_key")
+        prices.ingest(api_key, store, start, end)
+        sql_file = "bronze_entsoe_prices.sql"
+    else:
+        end = date.fromisoformat(args.end) if args.end else today
+        client_id = dbutils.secrets.get(scope="kraftdata", key="frost_client_id")
+        temperatures.ingest(client_id, store, start, end)
+        sql_file = "bronze_frost_temperatures.sql"
+
+    run_sql_file(
+        repo_root / "ingest" / "sql" / sql_file,
+        {"start_date": start.isoformat(), "end_date": end.isoformat()},
+    )
 
 
 if __name__ == "__main__":

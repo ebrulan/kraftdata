@@ -86,18 +86,44 @@ uv run python -m ingest.prices                                      # last few d
 uv run pytest
 ```
 
+Hourly air temperature comes from MET Norway's Frost API
+([`ingest/frost.py`](ingest/frost.py)), using one station per bidding zone:
+
+| Zone | City         | Station                    |
+|------|--------------|----------------------------|
+| NO1  | Oslo         | SN18700 Oslo - Blindern    |
+| NO2  | Kristiansand | SN39040 Kjevik             |
+| NO3  | Trondheim    | SN68860 Trondheim - Voll   |
+| NO4  | Tromsø       | SN90450 Tromsø             |
+| NO5  | Bergen       | SN50540 Bergen - Florida   |
+
+The values are the 2 m temperature at the full hour, partitioned by Norwegian calendar day
+in `raw/frost/air_temperature/date=YYYY-MM-DD/observations.jsonl`.
+
+```bash
+uv run python -m ingest.temperatures --start 2022-01-01 --end 2026-10-07
+```
+
 ### Bronze and the daily job
 
 Unity Catalog exposes the raw container as the external volume
-`dbw_kraftdata.landing.raw`. [`ingest/sql/bronze_entsoe_prices.sql`](ingest/sql/bronze_entsoe_prices.sql)
-loads it into the Delta table `dbw_kraftdata.bronze.entsoe_day_ahead_prices` with
-`INSERT ... REPLACE WHERE`, which swaps out exactly the loaded dates.
+`dbw_kraftdata.landing.raw`. The SQL files in [`ingest/sql/`](ingest/sql/) load it into the
+Delta tables `dbw_kraftdata.bronze.entsoe_day_ahead_prices` and
+`dbw_kraftdata.bronze.frost_air_temperature` with `INSERT ... REPLACE WHERE`, which swaps
+out exactly the loaded dates.
 
 The daily job is defined as a Databricks Asset Bundle in [`databricks.yml`](databricks.yml)
 and runs on serverless compute at 14:30 Oslo time, after next-day prices are published.
-The ENTSO-E key is read from the Databricks secret scope `kraftdata`.
+It has one task per source, so a failing API does not block the other. The API keys are
+read from the Databricks secret scope `kraftdata`.
 
 ```bash
 databricks bundle deploy
 databricks bundle run daily_ingest
 ```
+
+## Data sources and licenses
+
+- Day-ahead prices: [ENTSO-E Transparency Platform](https://transparency.entsoe.eu/).
+- Temperatures: [MET Norway, Frost API](https://frost.met.no/), licensed under
+  [CC BY 3.0 NO](https://creativecommons.org/licenses/by/3.0/no/).

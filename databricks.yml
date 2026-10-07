@@ -15,7 +15,7 @@ resources:
   jobs:
     daily_ingest:
       name: kraftdata-daily-ingest
-      description: Fetch day-ahead prices into ADLS raw and load them into bronze.
+      description: Fetch day-ahead prices and temperatures into ADLS raw and load them into bronze.
       # Day-ahead prices for the next day are published around 13:00 CET.
       schedule:
         quartz_cron_expression: "0 30 14 * * ?"
@@ -27,7 +27,14 @@ resources:
           environment_key: default
           spark_python_task:
             python_file: jobs/daily_ingest.py
-            parameters: ["--repo-root", "${workspace.file_path}"]
+            parameters: ["--source", "prices", "--repo-root", "${workspace.file_path}"]
+          max_retries: 1
+          min_retry_interval_millis: 600000
+        - task_key: ingest_temperatures
+          environment_key: default
+          spark_python_task:
+            python_file: jobs/daily_ingest.py
+            parameters: ["--source", "temperatures", "--repo-root", "${workspace.file_path}"]
           max_retries: 1
           min_retry_interval_millis: 600000
       environments:

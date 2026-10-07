@@ -18,20 +18,12 @@ from dotenv import load_dotenv
 
 from ingest.entsoe import ZONES, PricePoint, fetch_day_ahead_xml, parse_day_ahead_xml
 from ingest.storage import RawStore
+from ingest.timeutils import date_chunks
 
 log = logging.getLogger(__name__)
 
 SOURCE_PATH = "entsoe/day_ahead_prices"
 MAX_DAYS_PER_REQUEST = 365
-
-
-def date_chunks(start: date, end: date, size: int) -> list[tuple[date, date]]:
-    chunks = []
-    while start <= end:
-        chunk_end = min(start + timedelta(days=size - 1), end)
-        chunks.append((start, chunk_end))
-        start = chunk_end + timedelta(days=1)
-    return chunks
 
 
 def partition_path(delivery_date: str) -> str:
