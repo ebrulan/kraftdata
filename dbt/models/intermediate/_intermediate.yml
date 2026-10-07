@@ -1,0 +1,62 @@
+version: 2
+
+models:
+  - name: int_valutakurs_dag
+    description: >
+      One EUR/NOK rate per calendar day. Days without a published rate (weekends,
+      holidays, today before 16:00) carry the most recent earlier rate forward.
+    columns:
+      - name: calendar_date
+        description: Calendar day.
+        data_tests: [not_null, unique]
+      - name: eur_nok
+        description: NOK per EUR that applies on this day.
+        data_tests: [not_null]
+      - name: rate_date
+        description: The business day the applied rate was published.
+
+  - name: int_pris_vaer_time
+    description: >
+      Price and weather per bidding zone and hour. 15-minute prices (from October 2025)
+      are averaged to hours so they match the hourly temperature observations.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [price_area, hour_start_utc]
+    columns:
+      - name: price_area
+        description: Bidding zone code.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_prisomrade')
+                field: price_area
+      - name: delivery_date
+        description: Norwegian market day the hour belongs to.
+        data_tests: [not_null]
+      - name: hour_start_utc
+        description: Start of the hour (UTC).
+        data_tests: [not_null]
+      - name: hour_start_local
+        description: Start of the hour in Norwegian local time.
+      - name: price_eur_mwh
+        description: Average day-ahead price in the hour, EUR/MWh.
+        data_tests:
+          - not_null
+          - price_in_reasonable_range
+      - name: price_ore_kwh
+        description: The same price in øre/kWh, excluding VAT, grid tariffs and fees.
+        data_tests: [not_null]
+      - name: eur_nok
+        description: EUR/NOK rate used for the conversion.
+      - name: air_temperature_c
+        description: >
+          Temperature at the start of the hour in the zone's reference city. Null for
+          hours that have not been observed yet, such as tomorrow.
+      - name: price_intervals
+        description: Number of price intervals in the hour, 1 (hourly) or 4 (15-minute).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [1, 4]

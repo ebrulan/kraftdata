@@ -1,0 +1,73 @@
+version: 2
+
+models:
+  - name: fct_spotpris_dag
+    description: >
+      Daily price and temperature per bidding zone, one row per zone and Norwegian
+      market day. Prices are averages of hourly prices.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [price_area, delivery_date]
+    columns:
+      - name: price_area
+        description: Bidding zone code.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [NO1, NO2, NO3, NO4, NO5]
+          - relationships:
+              arguments:
+                to: ref('dim_prisomrade')
+                field: price_area
+      - name: delivery_date
+        description: Norwegian market day.
+        data_tests: [not_null]
+      - name: hours_in_day
+        description: 23 when summer time starts, 25 when it ends, otherwise 24.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [23, 24, 25]
+      - name: avg_price_eur_mwh
+        description: Average price over the day's hours, EUR/MWh.
+        data_tests:
+          - not_null
+          - price_in_reasonable_range
+      - name: min_price_eur_mwh
+        description: Lowest hourly price, EUR/MWh.
+      - name: max_price_eur_mwh
+        description: Highest hourly price, EUR/MWh.
+      - name: avg_price_ore_kwh
+        description: Average price in øre/kWh, excluding VAT and fees.
+        data_tests: [not_null]
+      - name: min_price_ore_kwh
+        description: Lowest hourly price in øre/kWh.
+      - name: max_price_ore_kwh
+        description: Highest hourly price in øre/kWh.
+      - name: most_expensive_hour_local
+        description: Start of the most expensive hour, Norwegian local time.
+      - name: cheapest_hour_local
+        description: Start of the cheapest hour, Norwegian local time.
+      - name: avg_temperature_c
+        description: Mean temperature in the zone's reference city over observed hours.
+      - name: temperature_hours
+        description: Number of hours with a temperature; lower than hours_in_day for today and tomorrow.
+      - name: eur_nok
+        description: EUR/NOK rate used for the øre/kWh columns.
+
+  - name: dim_prisomrade
+    description: The five Norwegian bidding zones.
+    columns:
+      - name: price_area
+        description: Bidding zone code, NO1-NO5.
+        data_tests: [not_null, unique]
+      - name: area_name
+        description: Common Norwegian name of the zone.
+      - name: eic_code
+        description: ENTSO-E area code used in the API.
+      - name: reference_city
+        description: City whose temperature represents the zone.
+      - name: weather_station_id
+        description: Frost station id for the reference city.

@@ -77,3 +77,18 @@ models:
         data_tests: [not_null]
       - name: quality_code
         description: MET quality code; 0 means checked and OK, higher values are less certain.
+
+  - name: stg_valutakurser
+    description: Norges Bank EUR/NOK rate per business day.
+    columns:
+      - name: rate_date
+        description: Business day the rate was published.
+        data_tests: [not_null, unique]
+      - name: eur_nok
+        description: NOK per EUR.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 5
+                max_value: 20

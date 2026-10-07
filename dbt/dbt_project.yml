@@ -23,4 +23,4 @@ models:
 
 seeds:
   kraftdata:
-    +schema: marts
+    +schema: staging

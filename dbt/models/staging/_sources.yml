@@ -22,3 +22,9 @@ sources:
           freshness:
             warn_after: {count: 26, period: hour}
             error_after: {count: 50, period: hour}
+      - name: norges_bank_eur_nok
+        description: Norges Bank daily EUR/NOK exchange rates, one row per business day.
+        config:
+          loaded_at_field: _loaded_at
+          freshness:
+            warn_after: {count: 4, period: day}
