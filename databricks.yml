@@ -2,8 +2,15 @@
 #   databricks bundle validate
 #   databricks bundle deploy
 #   databricks bundle run daily_ingest
+#   databricks bundle generate dashboard --resource kraftdata --force   # pull UI edits into the repo
 bundle:
   name: kraftdata
+
+variables:
+  warehouse_id:
+    description: SQL warehouse that runs the dashboard queries
+    lookup:
+      warehouse: Serverless Starter Warehouse
 
 targets:
   dev:
@@ -12,6 +19,12 @@ targets:
       profile: kraftdata
 
 resources:
+  dashboards:
+    kraftdata:
+      display_name: Kraftdata
+      file_path: ./dashboards/kraftdata.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+
   jobs:
     daily_ingest:
       name: kraftdata-daily-ingest

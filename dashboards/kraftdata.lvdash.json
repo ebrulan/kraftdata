@@ -1,0 +1,586 @@
+{
+  "datasets": [
+    {
+      "name": "daily_price",
+      "displayName": "Daily price per zone",
+      "queryLines": [
+        "SELECT\n",
+        "  delivery_date AS day,\n",
+        "  zone,\n",
+        "  AVG(price_eur_mwh) AS avg_price_eur_mwh,\n",
+        "  MIN(price_eur_mwh) AS min_price_eur_mwh,\n",
+        "  MAX(price_eur_mwh) AS max_price_eur_mwh\n",
+        "FROM dbw_kraftdata.bronze.entsoe_day_ahead_prices\n",
+        "GROUP BY ALL\n"
+      ]
+    },
+    {
+      "name": "intraday_price",
+      "displayName": "Prices today and tomorrow",
+      "queryLines": [
+        "SELECT\n",
+        "  from_utc_timestamp(interval_start_utc, 'Europe/Oslo') AS local_time,\n",
+        "  delivery_date AS day,\n",
+        "  zone,\n",
+        "  price_eur_mwh\n",
+        "FROM dbw_kraftdata.bronze.entsoe_day_ahead_prices\n",
+        "WHERE delivery_date >= current_date()\n"
+      ]
+    },
+    {
+      "name": "price_vs_temperature",
+      "displayName": "Daily price vs temperature",
+      "queryLines": [
+        "WITH price AS (\n",
+        "  SELECT delivery_date AS day, zone, AVG(price_eur_mwh) AS avg_price_eur_mwh\n",
+        "  FROM dbw_kraftdata.bronze.entsoe_day_ahead_prices\n",
+        "  GROUP BY ALL\n",
+        "),\n",
+        "temperature AS (\n",
+        "  SELECT observation_date AS day, zone, city, AVG(air_temperature_c) AS avg_temperature_c\n",
+        "  FROM dbw_kraftdata.bronze.frost_air_temperature\n",
+        "  GROUP BY ALL\n",
+        ")\n",
+        "SELECT p.day, p.zone, t.city, p.avg_price_eur_mwh, t.avg_temperature_c\n",
+        "FROM price p\n",
+        "JOIN temperature t USING (day, zone)\n"
+      ]
+    },
+    {
+      "name": "latest_summary",
+      "displayName": "Latest available day per zone",
+      "queryLines": [
+        "SELECT\n",
+        "  zone,\n",
+        "  delivery_date AS day,\n",
+        "  ROUND(AVG(price_eur_mwh), 2) AS avg_price_eur_mwh,\n",
+        "  ROUND(MIN(price_eur_mwh), 2) AS min_price_eur_mwh,\n",
+        "  ROUND(MAX(price_eur_mwh), 2) AS max_price_eur_mwh\n",
+        "FROM dbw_kraftdata.bronze.entsoe_day_ahead_prices\n",
+        "WHERE delivery_date = (SELECT MAX(delivery_date) FROM dbw_kraftdata.bronze.entsoe_day_ahead_prices)\n",
+        "GROUP BY ALL\n",
+        "ORDER BY zone\n"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "overview",
+      "displayName": "Overview",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layout": [
+        {
+          "widget": {
+            "name": "header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Kraftdata: Norwegian day-ahead power prices\n",
+                "Day-ahead prices for NO1-NO5 (ENTSO-E, EUR/MWh) and hourly temperature for one city per zone (MET Norway, Frost). Times are Norwegian local time.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "zone_filter",
+            "queries": [
+              {
+                "name": "filter_zone_filter_daily_price",
+                "query": {
+                  "datasetName": "daily_price",
+                  "fields": [
+                    {
+                      "name": "zone",
+                      "expression": "`zone`"
+                    },
+                    {
+                      "name": "zone_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "filter_zone_filter_intraday_price",
+                "query": {
+                  "datasetName": "intraday_price",
+                  "fields": [
+                    {
+                      "name": "zone",
+                      "expression": "`zone`"
+                    },
+                    {
+                      "name": "zone_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "filter_zone_filter_price_vs_temperature",
+                "query": {
+                  "datasetName": "price_vs_temperature",
+                  "fields": [
+                    {
+                      "name": "zone",
+                      "expression": "`zone`"
+                    },
+                    {
+                      "name": "zone_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "zone",
+                    "displayName": "zone",
+                    "queryName": "filter_zone_filter_daily_price"
+                  },
+                  {
+                    "fieldName": "zone",
+                    "displayName": "zone",
+                    "queryName": "filter_zone_filter_intraday_price"
+                  },
+                  {
+                    "fieldName": "zone",
+                    "displayName": "zone",
+                    "queryName": "filter_zone_filter_price_vs_temperature"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Zone"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "day_filter",
+            "queries": [
+              {
+                "name": "filter_day_filter_daily_price",
+                "query": {
+                  "datasetName": "daily_price",
+                  "fields": [
+                    {
+                      "name": "day",
+                      "expression": "`day`"
+                    },
+                    {
+                      "name": "day_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "filter_day_filter_price_vs_temperature",
+                "query": {
+                  "datasetName": "price_vs_temperature",
+                  "fields": [
+                    {
+                      "name": "day",
+                      "expression": "`day`"
+                    },
+                    {
+                      "name": "day_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "day",
+                    "displayName": "day",
+                    "queryName": "filter_day_filter_daily_price"
+                  },
+                  {
+                    "fieldName": "day",
+                    "displayName": "day",
+                    "queryName": "filter_day_filter_price_vs_temperature"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Period"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 2,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "latest_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "latest_summary",
+                  "fields": [
+                    {
+                      "name": "zone",
+                      "expression": "`zone`"
+                    },
+                    {
+                      "name": "day",
+                      "expression": "`day`"
+                    },
+                    {
+                      "name": "avg_price_eur_mwh",
+                      "expression": "`avg_price_eur_mwh`"
+                    },
+                    {
+                      "name": "min_price_eur_mwh",
+                      "expression": "`min_price_eur_mwh`"
+                    },
+                    {
+                      "name": "max_price_eur_mwh",
+                      "expression": "`max_price_eur_mwh`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "zone",
+                    "displayName": "Zone"
+                  },
+                  {
+                    "fieldName": "day",
+                    "displayName": "Day"
+                  },
+                  {
+                    "fieldName": "avg_price_eur_mwh",
+                    "displayName": "Average (EUR/MWh)"
+                  },
+                  {
+                    "fieldName": "min_price_eur_mwh",
+                    "displayName": "Min (EUR/MWh)"
+                  },
+                  {
+                    "fieldName": "max_price_eur_mwh",
+                    "displayName": "Max (EUR/MWh)"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Latest day with prices"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 2,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "daily_price_chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "daily_price",
+                  "fields": [
+                    {
+                      "name": "day",
+                      "expression": "`day`"
+                    },
+                    {
+                      "name": "zone",
+                      "expression": "`zone`"
+                    },
+                    {
+                      "name": "avg_price",
+                      "expression": "AVG(`avg_price_eur_mwh`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "day",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Day"
+                },
+                "y": {
+                  "fieldName": "avg_price",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Average price (EUR/MWh)"
+                },
+                "color": {
+                  "fieldName": "zone",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Zone"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Daily average price per zone"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "intraday_chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "intraday_price",
+                  "fields": [
+                    {
+                      "name": "local_time",
+                      "expression": "`local_time`"
+                    },
+                    {
+                      "name": "zone",
+                      "expression": "`zone`"
+                    },
+                    {
+                      "name": "price",
+                      "expression": "AVG(`price_eur_mwh`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "local_time",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Time"
+                },
+                "y": {
+                  "fieldName": "price",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Price (EUR/MWh)"
+                },
+                "color": {
+                  "fieldName": "zone",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Zone"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Prices today and tomorrow (15-minute)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "monthly_chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "daily_price",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "DATE_TRUNC(\"MONTH\", `day`)"
+                    },
+                    {
+                      "name": "zone",
+                      "expression": "`zone`"
+                    },
+                    {
+                      "name": "avg_price",
+                      "expression": "AVG(`avg_price_eur_mwh`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Month"
+                },
+                "y": {
+                  "fieldName": "avg_price",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Average price (EUR/MWh)"
+                },
+                "color": {
+                  "fieldName": "zone",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Zone"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Monthly average price per zone"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 7,
+            "width": 2,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "scatter_chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "price_vs_temperature",
+                  "fields": [
+                    {
+                      "name": "avg_temperature_c",
+                      "expression": "`avg_temperature_c`"
+                    },
+                    {
+                      "name": "avg_price_eur_mwh",
+                      "expression": "`avg_price_eur_mwh`"
+                    },
+                    {
+                      "name": "zone",
+                      "expression": "`zone`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "scatter",
+              "encodings": {
+                "x": {
+                  "fieldName": "avg_temperature_c",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Daily mean temperature (°C)"
+                },
+                "y": {
+                  "fieldName": "avg_price_eur_mwh",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Daily average price (EUR/MWh)"
+                },
+                "color": {
+                  "fieldName": "zone",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Zone"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Price vs temperature, one dot per day and zone"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 15,
+            "width": 6,
+            "height": 7
+          }
+        }
+      ]
+    }
+  ]
+}

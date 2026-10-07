@@ -30,6 +30,7 @@ flowchart LR
 | `ml/`     | Forecasting model and MLflow tracking            |
 | `agent/`  | Natural-language to SQL assistant using Claude   |
 | `jobs/`   | Entry points for Databricks jobs                 |
+| `dashboards/` | Databricks AI/BI dashboard definition        |
 | `infra/`  | Azure CLI scripts for the cloud resources        |
 | `docs/`   | Diagrams and documentation                       |
 | `tests/`  | pytest unit tests                                |
@@ -121,6 +122,21 @@ read from the Databricks secret scope `kraftdata`.
 databricks bundle deploy
 databricks bundle run daily_ingest
 ```
+
+## Dashboard
+
+An AI/BI dashboard in Databricks shows daily and 15-minute prices per zone, monthly
+averages, the latest day, and price against temperature. It is defined as code in
+[`dashboards/kraftdata.lvdash.json`](dashboards/kraftdata.lvdash.json) (SQL datasets plus
+widget layout) and deployed with the bundle.
+
+Two ways to change it:
+
+1. Edit the SQL or layout in the JSON file and run `databricks bundle deploy`.
+2. Edit it in the Databricks UI, then pull the changes back into the repo with
+   `databricks bundle generate dashboard --resource kraftdata --force` and commit.
+
+The dashboard reads bronze tables for now and will move to the dbt marts in phase 2.
 
 ## Data sources and licenses
 
