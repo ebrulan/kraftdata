@@ -1,0 +1,79 @@
+version: 2
+
+models:
+  - name: stg_spotpriser
+    description: >
+      Day-ahead spot prices per bidding zone and delivery interval. All timestamps are UTC
+      unless the column name ends in `_local` (Europe/Oslo). `delivery_date` is the
+      Norwegian market day.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [price_area, interval_start_utc]
+    columns:
+      - name: price_area
+        description: Bidding zone code.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [NO1, NO2, NO3, NO4, NO5]
+          - relationships:
+              arguments:
+                to: ref('price_areas')
+                field: price_area
+      - name: delivery_date
+        description: Market day in Norwegian local time.
+        data_tests: [not_null]
+      - name: interval_start_utc
+        description: Start of the delivery interval (UTC).
+        data_tests: [not_null]
+      - name: interval_end_utc
+        description: End of the delivery interval (UTC), exclusive.
+      - name: interval_start_local
+        description: Start of the delivery interval in Norwegian local time (CET/CEST).
+      - name: resolution_minutes
+        description: Interval length, 60 or 15 minutes.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [15, 60]
+      - name: price_eur_mwh
+        description: Day-ahead price in EUR per MWh.
+        data_tests:
+          - not_null
+          - price_in_reasonable_range
+
+  - name: stg_vaer
+    description: >
+      Hourly 2 m air temperature for one weather station per bidding zone, from MET Norway.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [station_id, observed_at_utc]
+    columns:
+      - name: station_id
+        description: Frost station id.
+        data_tests: [not_null]
+      - name: city
+        description: City the station represents.
+      - name: price_area
+        description: Bidding zone the station represents.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [NO1, NO2, NO3, NO4, NO5]
+      - name: observation_date
+        description: Calendar day in Norwegian local time.
+        data_tests: [not_null]
+      - name: observed_at_utc
+        description: Observation time (UTC), value at the full hour.
+        data_tests: [not_null]
+      - name: observed_at_local
+        description: Observation time in Norwegian local time.
+      - name: air_temperature_c
+        description: Air temperature in degrees Celsius.
+        data_tests: [not_null]
+      - name: quality_code
+        description: MET quality code; 0 means checked and OK, higher values are less certain.

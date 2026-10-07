@@ -22,7 +22,6 @@ build/
 dbt/target/
 dbt/dbt_packages/
 dbt/logs/
-dbt/profiles.yml
 
 # Databricks
 .databricks/

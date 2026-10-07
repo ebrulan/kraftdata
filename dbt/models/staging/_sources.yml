@@ -1,0 +1,24 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: Raw API data loaded into Delta by the daily Databricks job (see ingest/).
+    database: dbw_kraftdata
+    schema: bronze
+    tables:
+      - name: entsoe_day_ahead_prices
+        description: >
+          ENTSO-E day-ahead prices, one row per bidding zone and delivery interval.
+          Hourly intervals until February 2025, 15-minute intervals after that.
+        config:
+          loaded_at_field: _loaded_at
+          freshness:
+            warn_after: {count: 26, period: hour}
+            error_after: {count: 50, period: hour}
+      - name: frost_air_temperature
+        description: MET Norway hourly 2 m air temperature, one station per bidding zone.
+        config:
+          loaded_at_field: _loaded_at
+          freshness:
+            warn_after: {count: 26, period: hour}
+            error_after: {count: 50, period: hour}
