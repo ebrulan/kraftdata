@@ -29,6 +29,7 @@ flowchart LR
 | `dbt/`    | dbt project (staging, intermediate, marts)       |
 | `ml/`     | Forecasting model and MLflow tracking            |
 | `agent/`  | Natural-language to SQL assistant using Claude   |
+| `jobs/`   | Entry points for Databricks jobs                 |
 | `infra/`  | Azure CLI scripts for the cloud resources        |
 | `docs/`   | Diagrams and documentation                       |
 | `tests/`  | pytest unit tests                                |
@@ -55,3 +56,48 @@ databricks current-user me --profile kraftdata
 ```
 
 To delete everything: `az group delete --name rg-kraftdata --yes`.
+
+## Ingestion (EL)
+
+Day-ahead prices for NO1-NO5 come from the ENTSO-E Transparency Platform
+([`ingest/entsoe.py`](ingest/entsoe.py)). The parser handles:
+
+- **Two resolutions:** prices are published as `PT60M` until February 2025 and as `PT15M`
+  after that. Until the Nordic day-ahead market moved to 15-minute products (delivery day
+  1 October 2025) the four quarter-hours of an hour simply repeat the hourly price.
+- **Curve type A03:** a point is omitted when the price equals the previous one, so gaps
+  are forward-filled.
+- **Repeated series:** the API can return the same period twice; rows are de-duplicated.
+- **Norwegian market days:** a delivery date is a calendar day in `Europe/Oslo`, which is
+  23 or 25 hours long when daylight saving time starts or ends.
+
+Raw data lands in ADLS as one JSON Lines file per delivery date:
+
+```
+raw/entsoe/day_ahead_prices/date=2026-10-06/prices.jsonl
+```
+
+The path is deterministic and every write overwrites the whole file, so re-running a date
+replaces it instead of creating duplicates.
+
+```bash
+uv run python -m ingest.prices --start 2022-01-01 --end 2026-10-08  # backfill
+uv run python -m ingest.prices                                      # last few days
+uv run pytest
+```
+
+### Bronze and the daily job
+
+Unity Catalog exposes the raw container as the external volume
+`dbw_kraftdata.landing.raw`. [`ingest/sql/bronze_entsoe_prices.sql`](ingest/sql/bronze_entsoe_prices.sql)
+loads it into the Delta table `dbw_kraftdata.bronze.entsoe_day_ahead_prices` with
+`INSERT ... REPLACE WHERE`, which swaps out exactly the loaded dates.
+
+The daily job is defined as a Databricks Asset Bundle in [`databricks.yml`](databricks.yml)
+and runs on serverless compute at 14:30 Oslo time, after next-day prices are published.
+The ENTSO-E key is read from the Databricks secret scope `kraftdata`.
+
+```bash
+databricks bundle deploy
+databricks bundle run daily_ingest
+```

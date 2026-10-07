@@ -78,8 +78,9 @@ def parse_day_ahead_xml(xml_text: str, zone: str) -> list[PricePoint]:
     """Parse an A44 price document into one row per delivery interval.
 
     Handles three quirks of the API:
-      - resolution is PT60M before the move to 15-minute day-ahead products
-        (1 October 2025) and PT15M after it;
+      - resolution is PT60M until February 2025 and PT15M after that. From
+        February to September 2025 the 15-minute points just repeat the hourly
+        price; real 15-minute prices start with delivery day 1 October 2025;
       - curve type A03 omits a point when the price equals the previous point,
         so gaps must be forward-filled;
       - the same period can appear in several TimeSeries, so rows are de-duplicated.
