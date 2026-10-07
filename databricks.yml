@@ -28,7 +28,7 @@ resources:
   jobs:
     daily_ingest:
       name: kraftdata-daily-ingest
-      description: Fetch day-ahead prices and temperatures into ADLS raw and load them into bronze.
+      description: Fetch prices, temperatures and exchange rates into ADLS raw, load bronze and run dbt.
       # Day-ahead prices for the next day are published around 13:00 CET.
       schedule:
         quartz_cron_expression: "0 30 14 * * ?"
@@ -50,6 +50,29 @@ resources:
             parameters: ["--source", "temperatures", "--repo-root", "${workspace.file_path}"]
           max_retries: 1
           min_retry_interval_millis: 600000
+        - task_key: ingest_exchange_rates
+          environment_key: default
+          spark_python_task:
+            python_file: jobs/daily_ingest.py
+            parameters: ["--source", "exchange_rates", "--repo-root", "${workspace.file_path}"]
+          max_retries: 1
+          min_retry_interval_millis: 600000
+        # Rebuild staging, intermediate and marts once the raw data is in, even if one
+        # source failed: dbt tests and source freshness then show what is missing.
+        - task_key: dbt_build
+          depends_on:
+            - task_key: ingest_prices
+            - task_key: ingest_temperatures
+            - task_key: ingest_exchange_rates
+          run_if: ALL_DONE
+          environment_key: dbt
+          dbt_task:
+            source: WORKSPACE
+            project_directory: ${workspace.file_path}/dbt
+            commands: ["dbt deps", "dbt build"]
+            warehouse_id: ${var.warehouse_id}
+            catalog: dbw_kraftdata
+            schema: prod
       environments:
         - environment_key: default
           spec:
@@ -57,3 +80,8 @@ resources:
             dependencies:
               - requests>=2.32
               - python-dotenv>=1.0
+        - environment_key: dbt
+          spec:
+            environment_version: "3"
+            dependencies:
+              - dbt-databricks>=1.10,<2.0

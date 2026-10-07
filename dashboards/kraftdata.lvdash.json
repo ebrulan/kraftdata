@@ -6,12 +6,12 @@
       "queryLines": [
         "SELECT\n",
         "  delivery_date AS day,\n",
-        "  zone,\n",
-        "  AVG(price_eur_mwh) AS avg_price_eur_mwh,\n",
-        "  MIN(price_eur_mwh) AS min_price_eur_mwh,\n",
-        "  MAX(price_eur_mwh) AS max_price_eur_mwh\n",
-        "FROM dbw_kraftdata.bronze.entsoe_day_ahead_prices\n",
-        "GROUP BY ALL\n"
+        "  price_area AS zone,\n",
+        "  avg_price_ore_kwh,\n",
+        "  min_price_ore_kwh,\n",
+        "  max_price_ore_kwh,\n",
+        "  avg_price_eur_mwh\n",
+        "FROM dbw_kraftdata.marts.fct_spotpris_dag\n"
       ]
     },
     {
@@ -19,31 +19,27 @@
       "displayName": "Prices today and tomorrow",
       "queryLines": [
         "SELECT\n",
-        "  from_utc_timestamp(interval_start_utc, 'Europe/Oslo') AS local_time,\n",
-        "  delivery_date AS day,\n",
-        "  zone,\n",
-        "  price_eur_mwh\n",
-        "FROM dbw_kraftdata.bronze.entsoe_day_ahead_prices\n",
-        "WHERE delivery_date >= current_date()\n"
+        "  p.interval_start_local AS local_time,\n",
+        "  p.delivery_date AS day,\n",
+        "  p.price_area AS zone,\n",
+        "  p.price_eur_mwh * fx.eur_nok / 10 AS price_ore_kwh\n",
+        "FROM dbw_kraftdata.staging.stg_spotpriser p\n",
+        "JOIN dbw_kraftdata.intermediate.int_valutakurs_dag fx\n",
+        "  ON fx.calendar_date = p.delivery_date\n",
+        "WHERE p.delivery_date >= current_date()\n"
       ]
     },
     {
       "name": "price_vs_temperature",
       "displayName": "Daily price vs temperature",
       "queryLines": [
-        "WITH price AS (\n",
-        "  SELECT delivery_date AS day, zone, AVG(price_eur_mwh) AS avg_price_eur_mwh\n",
-        "  FROM dbw_kraftdata.bronze.entsoe_day_ahead_prices\n",
-        "  GROUP BY ALL\n",
-        "),\n",
-        "temperature AS (\n",
-        "  SELECT observation_date AS day, zone, city, AVG(air_temperature_c) AS avg_temperature_c\n",
-        "  FROM dbw_kraftdata.bronze.frost_air_temperature\n",
-        "  GROUP BY ALL\n",
-        ")\n",
-        "SELECT p.day, p.zone, t.city, p.avg_price_eur_mwh, t.avg_temperature_c\n",
-        "FROM price p\n",
-        "JOIN temperature t USING (day, zone)\n"
+        "SELECT\n",
+        "  delivery_date AS day,\n",
+        "  price_area AS zone,\n",
+        "  avg_price_ore_kwh,\n",
+        "  avg_temperature_c\n",
+        "FROM dbw_kraftdata.marts.fct_spotpris_dag\n",
+        "WHERE temperature_hours = hours_in_day\n"
       ]
     },
     {
@@ -51,14 +47,17 @@
       "displayName": "Latest available day per zone",
       "queryLines": [
         "SELECT\n",
-        "  zone,\n",
-        "  delivery_date AS day,\n",
-        "  ROUND(AVG(price_eur_mwh), 2) AS avg_price_eur_mwh,\n",
-        "  ROUND(MIN(price_eur_mwh), 2) AS min_price_eur_mwh,\n",
-        "  ROUND(MAX(price_eur_mwh), 2) AS max_price_eur_mwh\n",
-        "FROM dbw_kraftdata.bronze.entsoe_day_ahead_prices\n",
-        "WHERE delivery_date = (SELECT MAX(delivery_date) FROM dbw_kraftdata.bronze.entsoe_day_ahead_prices)\n",
-        "GROUP BY ALL\n",
+        "  f.price_area AS zone,\n",
+        "  d.area_name,\n",
+        "  f.delivery_date AS day,\n",
+        "  ROUND(f.avg_price_ore_kwh, 1) AS avg_price_ore_kwh,\n",
+        "  ROUND(f.min_price_ore_kwh, 1) AS min_price_ore_kwh,\n",
+        "  ROUND(f.max_price_ore_kwh, 1) AS max_price_ore_kwh,\n",
+        "  date_format(f.cheapest_hour_local, 'HH:mm') AS cheapest_hour,\n",
+        "  date_format(f.most_expensive_hour_local, 'HH:mm') AS most_expensive_hour\n",
+        "FROM dbw_kraftdata.marts.fct_spotpris_dag f\n",
+        "JOIN dbw_kraftdata.marts.dim_prisomrade d USING (price_area)\n",
+        "WHERE f.delivery_date = (SELECT MAX(delivery_date) FROM dbw_kraftdata.marts.fct_spotpris_dag)\n",
         "ORDER BY zone\n"
       ]
     }
@@ -75,7 +74,7 @@
             "multilineTextboxSpec": {
               "lines": [
                 "# Kraftdata: Norwegian day-ahead power prices\n",
-                "Day-ahead prices for NO1-NO5 (ENTSO-E, EUR/MWh) and hourly temperature for one city per zone (MET Norway, Frost). Times are Norwegian local time.\n"
+                "Day-ahead prices for NO1-NO5 in øre/kWh excluding VAT and fees (ENTSO-E, converted with Norges Bank EUR/NOK), and temperature for one city per zone (MET Norway, Frost). Times are Norwegian local time. Source: dbt marts.\n"
               ]
             }
           },
@@ -260,20 +259,32 @@
                       "expression": "`zone`"
                     },
                     {
+                      "name": "area_name",
+                      "expression": "`area_name`"
+                    },
+                    {
                       "name": "day",
                       "expression": "`day`"
                     },
                     {
-                      "name": "avg_price_eur_mwh",
-                      "expression": "`avg_price_eur_mwh`"
+                      "name": "avg_price_ore_kwh",
+                      "expression": "`avg_price_ore_kwh`"
                     },
                     {
-                      "name": "min_price_eur_mwh",
-                      "expression": "`min_price_eur_mwh`"
+                      "name": "min_price_ore_kwh",
+                      "expression": "`min_price_ore_kwh`"
                     },
                     {
-                      "name": "max_price_eur_mwh",
-                      "expression": "`max_price_eur_mwh`"
+                      "name": "max_price_ore_kwh",
+                      "expression": "`max_price_ore_kwh`"
+                    },
+                    {
+                      "name": "cheapest_hour",
+                      "expression": "`cheapest_hour`"
+                    },
+                    {
+                      "name": "most_expensive_hour",
+                      "expression": "`most_expensive_hour`"
                     }
                   ],
                   "disaggregated": true
@@ -290,20 +301,32 @@
                     "displayName": "Zone"
                   },
                   {
+                    "fieldName": "area_name",
+                    "displayName": "Area"
+                  },
+                  {
                     "fieldName": "day",
                     "displayName": "Day"
                   },
                   {
-                    "fieldName": "avg_price_eur_mwh",
-                    "displayName": "Average (EUR/MWh)"
+                    "fieldName": "avg_price_ore_kwh",
+                    "displayName": "Average (øre/kWh)"
                   },
                   {
-                    "fieldName": "min_price_eur_mwh",
-                    "displayName": "Min (EUR/MWh)"
+                    "fieldName": "min_price_ore_kwh",
+                    "displayName": "Min"
                   },
                   {
-                    "fieldName": "max_price_eur_mwh",
-                    "displayName": "Max (EUR/MWh)"
+                    "fieldName": "max_price_ore_kwh",
+                    "displayName": "Max"
+                  },
+                  {
+                    "fieldName": "cheapest_hour",
+                    "displayName": "Cheapest hour"
+                  },
+                  {
+                    "fieldName": "most_expensive_hour",
+                    "displayName": "Most expensive hour"
                   }
                 ]
               },
@@ -339,7 +362,7 @@
                     },
                     {
                       "name": "avg_price",
-                      "expression": "AVG(`avg_price_eur_mwh`)"
+                      "expression": "AVG(`avg_price_ore_kwh`)"
                     }
                   ],
                   "disaggregated": false
@@ -362,7 +385,7 @@
                   "scale": {
                     "type": "quantitative"
                   },
-                  "displayName": "Average price (EUR/MWh)"
+                  "displayName": "Average price (øre/kWh)"
                 },
                 "color": {
                   "fieldName": "zone",
@@ -404,7 +427,7 @@
                     },
                     {
                       "name": "price",
-                      "expression": "AVG(`price_eur_mwh`)"
+                      "expression": "AVG(`price_ore_kwh`)"
                     }
                   ],
                   "disaggregated": false
@@ -427,7 +450,7 @@
                   "scale": {
                     "type": "quantitative"
                   },
-                  "displayName": "Price (EUR/MWh)"
+                  "displayName": "Price (øre/kWh)"
                 },
                 "color": {
                   "fieldName": "zone",
@@ -469,7 +492,7 @@
                     },
                     {
                       "name": "avg_price",
-                      "expression": "AVG(`avg_price_eur_mwh`)"
+                      "expression": "AVG(`avg_price_ore_kwh`)"
                     }
                   ],
                   "disaggregated": false
@@ -492,7 +515,7 @@
                   "scale": {
                     "type": "quantitative"
                   },
-                  "displayName": "Average price (EUR/MWh)"
+                  "displayName": "Average price (øre/kWh)"
                 },
                 "color": {
                   "fieldName": "zone",
@@ -529,8 +552,8 @@
                       "expression": "`avg_temperature_c`"
                     },
                     {
-                      "name": "avg_price_eur_mwh",
-                      "expression": "`avg_price_eur_mwh`"
+                      "name": "avg_price_ore_kwh",
+                      "expression": "`avg_price_ore_kwh`"
                     },
                     {
                       "name": "zone",
@@ -553,11 +576,11 @@
                   "displayName": "Daily mean temperature (°C)"
                 },
                 "y": {
-                  "fieldName": "avg_price_eur_mwh",
+                  "fieldName": "avg_price_ore_kwh",
                   "scale": {
                     "type": "quantitative"
                   },
-                  "displayName": "Daily average price (EUR/MWh)"
+                  "displayName": "Daily average price (øre/kWh)"
                 },
                 "color": {
                   "fieldName": "zone",
