@@ -60,14 +60,32 @@ if ! grep -q "^\[$PROFILE\]" ~/.databrickscfg 2>/dev/null; then
 fi
 export DATABRICKS_CONFIG_PROFILE="$PROFILE"
 
-# The default storage credential is named after the workspace (dashes become underscores).
-CREDENTIAL="${WORKSPACE//-/_}"
+# The workspace's default storage credential may only reach the workspace's own
+# storage, so create a dedicated credential on the same access connector.
+CONNECTOR_ID=$(az databricks access-connector show \
+  --resource-group "$MANAGED_RG" --name unity-catalog-access-connector --query id -o tsv)
+databricks storage-credentials create --json "{
+  \"name\": \"kraftdata_adls\",
+  \"azure_managed_identity\": {\"access_connector_id\": \"$CONNECTOR_ID\"}
+}"
+
 echo "Waiting for role assignment to propagate..."
 sleep 60
+# File events (used by Auto Loader notifications) need extra Event Grid roles; we don't use them.
 databricks external-locations create kraftdata_raw \
-  "abfss://$CONTAINER@$STORAGE_ACCOUNT.dfs.core.windows.net/" "$CREDENTIAL" \
+  "abfss://$CONTAINER@$STORAGE_ACCOUNT.dfs.core.windows.net/" kraftdata_adls \
   --comment "Raw landing zone for kraftdata API data"
+databricks external-locations update kraftdata_raw --json '{"enable_file_events": false}'
 
 databricks storage-credentials validate \
-  --json "{\"storage_credential_name\":\"$CREDENTIAL\",\"external_location_name\":\"kraftdata_raw\"}"
+  --json '{"storage_credential_name":"kraftdata_adls","external_location_name":"kraftdata_raw"}'
+
+# Schemas, the raw volume and a secret scope for the daily job.
+databricks schemas create landing dbw_kraftdata
+databricks schemas create bronze dbw_kraftdata
+databricks volumes create dbw_kraftdata landing raw EXTERNAL \
+  --storage-location "abfss://$CONTAINER@$STORAGE_ACCOUNT.dfs.core.windows.net/"
+databricks secrets create-scope kraftdata
+echo "Add the ENTSO-E key with: databricks secrets put-secret kraftdata entsoe_api_key"
+
 echo "Workspace: $HOST"
