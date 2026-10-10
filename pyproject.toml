@@ -20,6 +20,14 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.6",
 ]
+ml = [
+    "databricks-sql-connector>=4.0",
+    "holidays>=0.60",
+    "lightgbm>=4.5",
+    "mlflow>=3.0",
+    "pandas>=2.2",
+    "scikit-learn>=1.5",
+]
 
 [tool.ruff]
 line-length = 100
