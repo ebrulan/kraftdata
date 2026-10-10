@@ -172,6 +172,46 @@ every push and pull request. dbt authenticates as the service principal `kraftda
 with OAuth machine-to-machine credentials (client secret stored as a GitHub secret). It can
 only read `bronze` and create its own schemas, and it cannot touch the production marts.
 
+## Forecasting next-day prices
+
+[`ml/train_forecast.py`](ml/train_forecast.py) trains a LightGBM model that predicts the
+next day's average price in NO2 (EUR/MWh) and compares it with a naive model that says
+"tomorrow = today".
+
+**Features** ([`int_prognose_features`](dbt/models/intermediate/int_prognose_features.sql)),
+all known before the day-ahead auction on the forecast date D:
+
+- prices on D, D-1, D-6 (same weekday as D+1) and the 7-day mean;
+- mean temperature in Kristiansand before 10:00 on D;
+- weekday, month, day of year and holiday flag for D+1;
+- the latest reservoir filling NVE had published before D, and its deviation from the
+  same week in earlier years.
+
+**Evaluation** is time-based: train on target dates in 2022-2024 (the last 15% used for
+early stopping), test on 2025 onwards. On 648 test days:
+
+| Model                     | MAE (EUR/MWh) |
+|---------------------------|---------------|
+| Naive ("tomorrow = today")| 14.77         |
+| LightGBM                  | 13.53         |
+
+That is an 8% improvement. Most of the signal is in today's price, which is why the naive
+model is hard to beat for a daily average; reservoir and temperature add a little.
+
+Parameters, metrics, feature importance and the model are logged to MLflow in Databricks,
+and the model is registered in Unity Catalog as `dbw_kraftdata.ml.price_forecast_lgbm` with
+the alias `champion`. The daily job scores the newest forecast date with the champion
+([`ml/score_forecast.py`](ml/score_forecast.py)) and stores it as a `live` forecast, so a
+real out-of-sample track record builds up next to the backtest in the mart `fct_prognose`.
+
+```bash
+uv run --group ml --env-file .env python -m ml.train_forecast
+```
+
+Limitation: the job runs at 14:30, after next-day prices are published but before the
+next morning's temperatures exist, so live forecasts have the morning temperature missing
+(LightGBM treats it as unknown). A morning run before the auction would match the backtest.
+
 ## Dashboard
 
 An AI/BI dashboard in Databricks shows daily and 15-minute prices per zone, monthly
@@ -186,10 +226,12 @@ Two ways to change it:
    `databricks bundle generate dashboard --resource kraftdata --force` and commit.
 
 The dashboard reads the dbt marts (prices in øre/kWh) and the 15-minute prices from staging.
+A second page shows the NO2 forecast against actual prices and the forecast error.
 
 ## Data sources and licenses
 
 - Day-ahead prices: [ENTSO-E Transparency Platform](https://transparency.entsoe.eu/).
+- Reservoir filling: [NVE](https://www.nve.no/energi/analyser-og-statistikk/magasinstatistikk/) (NLOD).
 - Exchange rates: [Norges Bank](https://www.norges-bank.no/en/topics/Statistics/exchange_rates/).
 - Temperatures: [MET Norway, Frost API](https://frost.met.no/), licensed under
   [CC BY 3.0 NO](https://creativecommons.org/licenses/by/3.0/no/).

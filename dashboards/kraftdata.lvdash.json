@@ -60,6 +60,64 @@
         "WHERE f.delivery_date = (SELECT MAX(delivery_date) FROM dbw_kraftdata.marts.fct_spotpris_dag)\n",
         "ORDER BY zone\n"
       ]
+    },
+    {
+      "name": "forecast_series",
+      "displayName": "NO2 forecast vs actual",
+      "queryLines": [
+        "SELECT target_date AS day, split, 'Actual' AS series, actual_ore_kwh AS ore_kwh\n",
+        "FROM dbw_kraftdata.marts.fct_prognose WHERE price_area = 'NO2'\n",
+        "UNION ALL\n",
+        "SELECT target_date, split, 'LightGBM', forecast_lgbm_ore_kwh\n",
+        "FROM dbw_kraftdata.marts.fct_prognose WHERE price_area = 'NO2'\n",
+        "UNION ALL\n",
+        "SELECT target_date, split, 'Naive (tomorrow = today)', forecast_naive_ore_kwh\n",
+        "FROM dbw_kraftdata.marts.fct_prognose WHERE price_area = 'NO2'\n"
+      ]
+    },
+    {
+      "name": "forecast_accuracy",
+      "displayName": "Forecast accuracy",
+      "queryLines": [
+        "SELECT\n",
+        "  split,\n",
+        "  COUNT(actual_eur_mwh) AS days,\n",
+        "  ROUND(AVG(ABS(error_lgbm_eur_mwh)), 2) AS mae_lgbm_eur_mwh,\n",
+        "  ROUND(AVG(ABS(error_naive_eur_mwh)), 2) AS mae_naive_eur_mwh,\n",
+        "  ROUND(100 * (1 - AVG(ABS(error_lgbm_eur_mwh)) / AVG(ABS(error_naive_eur_mwh))), 1)\n",
+        "    AS improvement_pct\n",
+        "FROM dbw_kraftdata.marts.fct_prognose\n",
+        "WHERE price_area = 'NO2' AND actual_eur_mwh IS NOT NULL\n",
+        "GROUP BY split\n"
+      ]
+    },
+    {
+      "name": "forecast_next",
+      "displayName": "Next-day forecast",
+      "queryLines": [
+        "SELECT target_date AS day, ROUND(forecast_lgbm_ore_kwh, 1) AS forecast_ore_kwh\n",
+        "FROM dbw_kraftdata.marts.fct_prognose\n",
+        "WHERE price_area = 'NO2' AND split = 'live'\n",
+        "ORDER BY target_date DESC\n",
+        "LIMIT 1\n"
+      ]
+    },
+    {
+      "name": "forecast_error_month",
+      "displayName": "Monthly forecast error",
+      "queryLines": [
+        "SELECT\n",
+        "  date_trunc('MONTH', target_date) AS month,\n",
+        "  'LightGBM' AS model, AVG(ABS(error_lgbm_eur_mwh)) AS mae_eur_mwh\n",
+        "FROM dbw_kraftdata.marts.fct_prognose\n",
+        "WHERE price_area = 'NO2' AND actual_eur_mwh IS NOT NULL\n",
+        "GROUP BY ALL\n",
+        "UNION ALL\n",
+        "SELECT date_trunc('MONTH', target_date), 'Naive', AVG(ABS(error_naive_eur_mwh))\n",
+        "FROM dbw_kraftdata.marts.fct_prognose\n",
+        "WHERE price_area = 'NO2' AND actual_eur_mwh IS NOT NULL\n",
+        "GROUP BY ALL\n"
+      ]
     }
   ],
   "pages": [
@@ -601,6 +659,372 @@
             "y": 15,
             "width": 6,
             "height": 7
+          }
+        }
+      ]
+    },
+    {
+      "name": "forecast",
+      "displayName": "Forecast",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layout": [
+        {
+          "widget": {
+            "name": "forecast_header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Next-day price forecast, NO2\n",
+                "LightGBM trained on 2022-2024 and tested on 2025 onwards (test), plus daily forecasts made by the job before the auction (live). The naive model says tomorrow's average equals today's. Prices in øre/kWh excluding VAT and fees.\n"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "next_counter",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "forecast_next",
+                  "fields": [
+                    {
+                      "name": "forecast_ore_kwh",
+                      "expression": "`forecast_ore_kwh`"
+                    },
+                    {
+                      "name": "day",
+                      "expression": "`day`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "forecast_ore_kwh",
+                  "displayName": "Forecast (øre/kWh)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Latest live forecast"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "split_filter",
+            "queries": [
+              {
+                "name": "filter_split_filter_forecast_series",
+                "query": {
+                  "datasetName": "forecast_series",
+                  "fields": [
+                    {
+                      "name": "split",
+                      "expression": "`split`"
+                    },
+                    {
+                      "name": "split_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "split",
+                    "displayName": "split",
+                    "queryName": "filter_split_filter_forecast_series"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Split"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "forecast_day_filter",
+            "queries": [
+              {
+                "name": "filter_forecast_day_filter_forecast_series",
+                "query": {
+                  "datasetName": "forecast_series",
+                  "fields": [
+                    {
+                      "name": "day",
+                      "expression": "`day`"
+                    },
+                    {
+                      "name": "day_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "day",
+                    "displayName": "day",
+                    "queryName": "filter_forecast_day_filter_forecast_series"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Period"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 2,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "forecast_chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "forecast_series",
+                  "fields": [
+                    {
+                      "name": "day",
+                      "expression": "`day`"
+                    },
+                    {
+                      "name": "series",
+                      "expression": "`series`"
+                    },
+                    {
+                      "name": "value",
+                      "expression": "AVG(`ore_kwh`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "day",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Day"
+                },
+                "y": {
+                  "fieldName": "value",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Average price (øre/kWh)"
+                },
+                "color": {
+                  "fieldName": "series",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Series"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Forecast vs actual daily average price"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "accuracy_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "forecast_accuracy",
+                  "fields": [
+                    {
+                      "name": "split",
+                      "expression": "`split`"
+                    },
+                    {
+                      "name": "days",
+                      "expression": "`days`"
+                    },
+                    {
+                      "name": "mae_lgbm_eur_mwh",
+                      "expression": "`mae_lgbm_eur_mwh`"
+                    },
+                    {
+                      "name": "mae_naive_eur_mwh",
+                      "expression": "`mae_naive_eur_mwh`"
+                    },
+                    {
+                      "name": "improvement_pct",
+                      "expression": "`improvement_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "split",
+                    "displayName": "Split"
+                  },
+                  {
+                    "fieldName": "days",
+                    "displayName": "Days"
+                  },
+                  {
+                    "fieldName": "mae_lgbm_eur_mwh",
+                    "displayName": "MAE LightGBM (EUR/MWh)"
+                  },
+                  {
+                    "fieldName": "mae_naive_eur_mwh",
+                    "displayName": "MAE naive (EUR/MWh)"
+                  },
+                  {
+                    "fieldName": "improvement_pct",
+                    "displayName": "Improvement (%)"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Mean absolute error"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 2,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "error_month_chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "forecast_error_month",
+                  "fields": [
+                    {
+                      "name": "month",
+                      "expression": "`month`"
+                    },
+                    {
+                      "name": "model",
+                      "expression": "`model`"
+                    },
+                    {
+                      "name": "mae",
+                      "expression": "AVG(`mae_eur_mwh`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Month"
+                },
+                "y": {
+                  "fieldName": "mae",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "MAE (EUR/MWh)"
+                },
+                "color": {
+                  "fieldName": "model",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Model"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Monthly mean absolute error"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 10,
+            "width": 4,
+            "height": 5
           }
         }
       ]
