@@ -28,3 +28,9 @@ sources:
           loaded_at_field: _loaded_at
           freshness:
             warn_after: {count: 4, period: day}
+      - name: nve_reservoir_filling
+        description: NVE weekly hydro reservoir filling per bidding zone and for all of Norway.
+        config:
+          loaded_at_field: _loaded_at
+          freshness:
+            warn_after: {count: 4, period: day}

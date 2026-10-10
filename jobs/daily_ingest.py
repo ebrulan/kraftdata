@@ -1,6 +1,7 @@
 """Daily Databricks job task: fetch recent data into the raw volume, then load it into bronze.
 
-Runs on serverless compute, once per source (`--source prices|temperatures|exchange_rates`).
+Runs on serverless compute, once per source
+(`--source prices|temperatures|exchange_rates|reservoirs`).
 API keys come from the Databricks secret scope `kraftdata`, and raw files are written
 through the Unity Catalog volume that points at the ADLS raw container.
 """
@@ -19,7 +20,7 @@ RAW_VOLUME = "/Volumes/dbw_kraftdata/landing/raw"
 def run_sql_file(path: Path, params: dict[str, str]) -> None:
     for statement in path.read_text().split(";"):
         if statement.strip():
-            spark.sql(statement, args=params)
+            spark.sql(statement, args=params if ":" in statement else None)
 
 
 def main() -> None:
@@ -28,7 +29,9 @@ def main() -> None:
     today = date.today()
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--source", choices=["prices", "temperatures", "exchange_rates"], required=True
+        "--source",
+        choices=["prices", "temperatures", "exchange_rates", "reservoirs"],
+        required=True,
     )
     # Serverless runs the script without __file__, so the bundle passes its file path.
     parser.add_argument("--repo-root", required=True)
@@ -37,7 +40,7 @@ def main() -> None:
     args = parser.parse_args()
     repo_root = Path(args.repo_root)
     sys.path.insert(0, str(repo_root))
-    from ingest import exchange_rates, prices, temperatures
+    from ingest import exchange_rates, prices, reservoirs, temperatures
     from ingest.storage import RawStore
 
     start = date.fromisoformat(args.start) if args.start else today - timedelta(days=2)
@@ -54,10 +57,15 @@ def main() -> None:
         client_id = dbutils.secrets.get(scope="kraftdata", key="frost_client_id")
         temperatures.ingest(client_id, store, start, end)
         sql_file = "bronze_frost_temperatures.sql"
-    else:
+    elif args.source == "exchange_rates":
         end = date.fromisoformat(args.end) if args.end else today
         exchange_rates.ingest(store, start, end)
         sql_file = "bronze_norges_bank_eur_nok.sql"
+    else:
+        # NVE returns the full history and may revise recent weeks, so reload everything.
+        end = today
+        reservoirs.ingest(store)
+        sql_file = "bronze_nve_reservoir_filling.sql"
 
     run_sql_file(
         repo_root / "ingest" / "sql" / sql_file,

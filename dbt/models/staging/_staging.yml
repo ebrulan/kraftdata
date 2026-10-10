@@ -92,3 +92,38 @@ models:
               arguments:
                 min_value: 5
                 max_value: 20
+
+  - name: stg_magasinfylling
+    description: >
+      Weekly hydro reservoir filling per bidding zone (area NO1-NO5) and for Norway (NO).
+      A week is dated by the Sunday that ends it and becomes known on `published_date`.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [area, week_end_date]
+    columns:
+      - name: area
+        description: NO1-NO5 for a bidding zone, NO for the whole country.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["NO", NO1, NO2, NO3, NO4, NO5]  # quoted: YAML reads bare NO as false
+      - name: week_end_date
+        description: Sunday that ends the ISO week.
+        data_tests: [not_null]
+      - name: published_date
+        description: Date NVE published the value (the Wednesday after the week).
+        data_tests: [not_null]
+      - name: filling_ratio
+        description: Share of reservoir capacity that is filled, 0-1.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1.1
+      - name: filling_twh
+        description: Stored energy in TWh.
+      - name: capacity_twh
+        description: Total reservoir capacity in TWh.
