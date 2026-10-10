@@ -28,7 +28,7 @@ resources:
   jobs:
     daily_ingest:
       name: kraftdata-daily-ingest
-      description: Fetch prices, temperatures, exchange rates and reservoir filling into ADLS raw, load bronze and run dbt.
+      description: Ingest prices, temperatures, exchange rates and reservoirs, run dbt, forecast tomorrow.
       # Day-ahead prices for the next day are published around 13:00 CET.
       schedule:
         quartz_cron_expression: "0 30 14 * * ?"
@@ -81,6 +81,25 @@ resources:
             warehouse_id: ${var.warehouse_id}
             catalog: dbw_kraftdata
             schema: prod
+        # Forecast tomorrow with the champion model, then refresh the forecast mart.
+        - task_key: forecast_next_day
+          depends_on:
+            - task_key: dbt_build
+          environment_key: ml
+          spark_python_task:
+            python_file: ml/score_forecast.py
+            parameters: ["--zone", "NO2"]
+        - task_key: dbt_forecast_mart
+          depends_on:
+            - task_key: forecast_next_day
+          environment_key: dbt
+          dbt_task:
+            source: WORKSPACE
+            project_directory: ${workspace.file_path}/dbt
+            commands: ["dbt deps", "dbt build --select fct_prognose"]
+            warehouse_id: ${var.warehouse_id}
+            catalog: dbw_kraftdata
+            schema: prod
       environments:
         - environment_key: default
           spec:
@@ -93,3 +112,11 @@ resources:
             environment_version: "3"
             dependencies:
               - dbt-databricks>=1.10,<2.0
+        # Same versions as the training environment, so the logged model loads unchanged.
+        - environment_key: ml
+          spec:
+            environment_version: "3"
+            dependencies:
+              - mlflow==3.17.0
+              - lightgbm==4.7.0
+              - scikit-learn==1.9.1

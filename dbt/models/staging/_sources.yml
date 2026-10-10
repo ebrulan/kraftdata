@@ -34,3 +34,13 @@ sources:
           loaded_at_field: _loaded_at
           freshness:
             warn_after: {count: 4, period: day}
+
+  - name: ml
+    description: Outputs from the forecasting code in ml/.
+    database: dbw_kraftdata
+    schema: ml
+    tables:
+      - name: price_forecasts
+        description: >
+          Next-day average price forecasts. `test` rows are a backtest on held-out dates,
+          `live` rows are made daily by the Databricks job before the actual price is known.

@@ -71,3 +71,52 @@ models:
         description: City whose temperature represents the zone.
       - name: weather_station_id
         description: Frost station id for the reference city.
+
+  - name: fct_prognose
+    description: >
+      Next-day average price forecasts from the LightGBM model and the naive model
+      ("tomorrow = today") next to the actual price. `split` is `test` for the backtest
+      and `live` for forecasts made by the daily job.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [price_area, target_date, split]
+    columns:
+      - name: price_area
+        description: Bidding zone code.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_prisomrade')
+                field: price_area
+      - name: forecast_date
+        description: Day the forecast was made (D).
+      - name: target_date
+        description: Day the forecast is for (D+1).
+        data_tests: [not_null]
+      - name: split
+        description: test (backtest) or live (made by the daily job).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [test, live]
+      - name: forecast_lgbm_eur_mwh
+        description: LightGBM forecast of the average price, EUR/MWh.
+        data_tests: [not_null]
+      - name: forecast_naive_eur_mwh
+        description: Naive forecast, the average price on the forecast date.
+      - name: actual_eur_mwh
+        description: Actual average price on the target date; null until published.
+      - name: error_lgbm_eur_mwh
+        description: Forecast minus actual for LightGBM.
+      - name: error_naive_eur_mwh
+        description: Forecast minus actual for the naive model.
+      - name: forecast_lgbm_ore_kwh
+        description: LightGBM forecast converted to øre/kWh.
+      - name: forecast_naive_ore_kwh
+        description: Naive forecast converted to øre/kWh.
+      - name: actual_ore_kwh
+        description: Actual average price in øre/kWh.
+      - name: mlflow_run_id
+        description: MLflow run that produced the model.
