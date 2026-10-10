@@ -60,3 +60,49 @@ models:
           - accepted_values:
               arguments:
                 values: [1, 4]
+
+  - name: int_prognose_features
+    description: >
+      Features for a next-day price forecast, one row per bidding zone and forecast date D.
+      All features are known before the day-ahead auction on D; the target is the
+      average price on D+1 (null for the latest date, which is the one to forecast).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [price_area, forecast_date]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "target_date = date_add(forecast_date, 1)"
+    columns:
+      - name: price_area
+        description: Bidding zone code.
+        data_tests: [not_null]
+      - name: forecast_date
+        description: Day D the forecast is made, before the auction at 12:00 CET.
+        data_tests: [not_null]
+      - name: target_date
+        description: Day D+1 the forecast is for.
+      - name: price_today
+        description: Average price on D (EUR/MWh), published on D-1.
+      - name: price_yesterday
+        description: Average price on D-1.
+      - name: price_same_weekday_last_week
+        description: Average price on D-6, the same weekday as D+1 one week earlier.
+      - name: price_7d_mean
+        description: Mean of the daily average prices D-6..D.
+      - name: temperature_morning_c
+        description: Mean temperature in the reference city from 00:00 to 10:00 on D.
+      - name: target_weekday
+        description: Weekday of D+1, 1 = Sunday ... 7 = Saturday.
+      - name: target_month
+        description: Month of D+1.
+      - name: target_day_of_year
+        description: Day of year of D+1, a smooth season signal.
+      - name: target_is_holiday
+        description: Whether D+1 is a Norwegian public holiday.
+      - name: reservoir_filling_ratio
+        description: Latest reservoir filling NVE had published before D.
+      - name: reservoir_vs_earlier_years
+        description: That filling minus the mean for the same ISO week in earlier years.
+      - name: target_price_eur_mwh
+        description: Actual average price on D+1 (EUR/MWh). The value to predict.

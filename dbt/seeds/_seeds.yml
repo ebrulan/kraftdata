@@ -1,0 +1,14 @@
+version: 2
+
+seeds:
+  - name: price_areas
+    description: The five Norwegian bidding zones with names and reference weather stations.
+  - name: norwegian_holidays
+    description: Norwegian public holidays 2021-2027, generated with the Python `holidays` package.
+    config:
+      column_types:
+        holiday_date: date
+        holiday_name: string
+    columns:
+      - name: holiday_date
+        data_tests: [unique, not_null]
